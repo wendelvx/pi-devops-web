@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* 
+  Se estiver usando Tailwind v4, o @theme substitui o tailwind.config.js 
+  para variáveis nativas. Se for v3, essas variáveis entram normalmente no css.
+*/
+@theme {
+  /* Cores de Fundo - Tons profundos e premium */
+  --color-dark-900: #0a0b10;
+  --color-dark-800: #12141d;
+  --color-dark-700: #1c1f2e;
+  
+  /* Identidade do Jogo (Magia/Tecnologia) */
+  --color-brand-500: #6366f1; /* Indigo principal */
+  --color-brand-600: #4f46e5;
+  --color-brand-glow: rgba(99, 102, 241, 0.4);
+
+  /* Status Gamificados */
+  --color-caos: #f43f5e; /* Incidentes de DevOps/Security */
+  --color-heal: #10b981; /* Resolução com sucesso */
+  --color-warn: #f59e0b;
+}
+
+@layer base {
+  body {
+    @apply bg-dark-900 text-slate-200 antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  /* Cards premium com efeito de vidro fosco */
+  .glass-card {
+    @apply bg-dark-800/80 backdrop-blur-md border border-dark-700;
+  }
+
+  /* Efeito interativo para botões principais */
+  .glow-brand {
+    box-shadow: 0 0 15px var(--color-brand-glow);
+    transition: all 0.3s ease;
+  }
+  
+  .glow-brand:hover {
+    box-shadow: 0 0 25px var(--color-brand-500);
+    transform: translateY(-2px);
+  }
+
+  /* Alerta visual para quando o Boss acionar um incidente */
+  .glow-caos {
+    box-shadow: 0 0 15px rgba(244, 63, 94, 0.4);
+    animation: pulse-border 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  /* Scrollbar customizada e minimalista para o feed de logs */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-dark-700 rounded-full;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-600;
+  }
+}
+
+/* Animação exclusiva para tensão durante eventos de falha no servidor */
+@keyframes pulse-border {
+  0% { 
+    border-color: rgba(244, 63, 94, 0.4); 
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.2); 
+  }
+  50% { 
+    border-color: rgba(244, 63, 94, 1); 
+    box-shadow: 0 0 25px rgba(244, 63, 94, 0.7); 
+  }
+  100% { 
+    border-color: rgba(244, 63, 94, 0.4); 
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.2); 
+  }
+}
