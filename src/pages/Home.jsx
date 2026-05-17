@@ -3,6 +3,12 @@ import { DashboardLayout } from '../components/DashboardLayout';
 import { Play, ShieldAlert, Cpu, Code2, Trash2 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
+// 1. IMPORTAÇÃO DAS FOTOS REAIS DOS PROFESSORES
+// Salve as fotos na pasta src/assets/ do seu projeto React
+import fotoInfra from '../assets/infra_boss.jpg';
+import fotoLogic from '../assets/logic_boss.jpg';
+import fotoSecurity from '../assets/security_boss.jpg';
+
 export function Home() {
   const [roomId, setRoomId] = useState('');
   const [bossId, setBossId] = useState('infra_boss');
@@ -15,10 +21,11 @@ export function Home() {
     setActiveRooms(savedRooms);
   }, []);
 
+  // 2. SUBSTITUIÇÃO DOS LINKS DO DICEBEAR PELAS VARIÁVEIS DAS FOTOS
   const bosses = [
-    { id: 'infra_boss', name: 'Professor de DevOps', icon: <Cpu className="text-warn" />, desc: 'Mestre dos Containers', avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=infra_boss&backgroundColor=f59e0b' },
-    { id: 'logic_boss', name: 'Professor de Back-end', icon: <Code2 className="text-brand-500" />, desc: 'Especialista em Algoritmos', avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=logic_boss&backgroundColor=6366f1' },
-    { id: 'security_boss', name: 'Professor de Security', icon: <ShieldAlert className="text-caos" />, desc: 'Guardião do Firewall', avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=security_boss&backgroundColor=f43f5e' },
+    { id: 'infra_boss', name: 'Professor de DevOps', icon: <Cpu className="text-warn" />, desc: 'Mestre dos Containers', avatar: fotoInfra },
+    { id: 'logic_boss', name: 'Professor de Back-end', icon: <Code2 className="text-brand-500" />, desc: 'Especialista em Algoritmos', avatar: fotoLogic },
+    { id: 'security_boss', name: 'Professor de Security', icon: <ShieldAlert className="text-caos" />, desc: 'Guardião do Firewall', avatar: fotoSecurity },
   ];
 
   const handleLaunch = (e) => {
@@ -84,7 +91,8 @@ export function Home() {
                         : 'bg-dark-900/30 border-dark-700 hover:border-slate-600'
                     }`}
                   >
-                    <img src={boss.avatar} alt="Boss Avatar" className="w-12 h-12 rounded-lg bg-dark-800" />
+                    {/* 3. ADICIONADO 'object-cover' E BORDAS NA IMAGEM AQUI */}
+                    <img src={boss.avatar} alt="Boss Avatar" className="w-12 h-12 rounded-lg bg-dark-800 object-cover border border-dark-700" />
                     <div>
                       <h3 className="font-bold text-white text-sm">{boss.name}</h3>
                       <p className="text-xs text-slate-400">{boss.desc}</p>
@@ -117,7 +125,8 @@ export function Home() {
               {activeRooms.map((room) => (
                 <div key={room.id} className="glass-card p-4 rounded-xl flex justify-between items-center group">
                   <Link to={`/room/${room.id}`} className="flex items-center gap-3 flex-1">
-                    <img src={room.avatar} alt="Avatar" className="w-10 h-10 rounded-full border border-dark-700" />
+                    {/* 4. ADICIONADO 'object-cover' NA IMAGEM DA LISTA AQUI TAMBÉM */}
+                    <img src={room.avatar} alt="Avatar" className="w-10 h-10 rounded-full border border-dark-700 object-cover" />
                     <div>
                       <h4 className="text-white font-bold">{room.id}</h4>
                       <p className="text-xs text-slate-400">{room.bossName}</p>
