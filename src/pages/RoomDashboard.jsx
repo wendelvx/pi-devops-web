@@ -56,16 +56,37 @@ export function RoomDashboard() {
 
   useEffect(() => {
     socket.connect();
-    
-    // Verifica se a sala acabou de ser criada pelo botão Inicializar Masmorra
-    const isNewRoom = sessionStorage.getItem(`@dungeon:room_created_${roomId}`);
 
-    if (isNewRoom === "true") {
-      socket.emit('join_game', { nickname: 'GAME_MASTER', class: 'admin', room_id: roomId, boss_id: initialBossId });
-      sessionStorage.removeItem(`@dungeon:room_created_${roomId}`);
+    const onAdminConnect = () => {
+      // 1. Lemos a flag que a Home.tsx salva. 
+      // Se for "true", significa que o admin acabou de criar a sala neste exato momento.
+      const isNewRoom = sessionStorage.getItem(`@dungeon:room_created_${roomId}`);
+
+      if (isNewRoom === "true") {
+        // Envia APENAS o JOIN_GAME. O backend Node.js já está programado para disparar
+        // uma atualização de estado automaticamente no final do join_game.
+        socket.emit('join_game', { 
+          nickname: 'GAME_MASTER', 
+          class: 'admin', 
+          room_id: roomId, 
+          boss_id: initialBossId 
+        });
+        
+        // Removemos a flag para que um simples F5 (refresh) não tente recriar a sala.
+        sessionStorage.removeItem(`@dungeon:room_created_${roomId}`);
+      } else {
+        // 2. Se for falso, é apenas o admin reconectando ou dando refresh na página.
+        // A sala já existe no Go, então entramos como espectador e pedimos o estado.
+        socket.emit('join_admin_spectator', { room_id: roomId });
+        socket.emit('admin_request_state', { room_id: roomId }); 
+      }
+    };
+
+    // Validação contra os re-renders do Strict Mode do React 18
+    if (socket.connected) {
+      onAdminConnect();
     } else {
-      socket.emit('join_admin_spectator', { room_id: roomId });
-      socket.emit('admin_request_state', { room_id: roomId }); 
+      socket.on('connect', onAdminConnect);
     }
 
     socket.on('boss_update', (data) => {
@@ -82,6 +103,7 @@ export function RoomDashboard() {
     });
 
     return () => {
+      socket.off('connect', onAdminConnect);
       socket.off('boss_update');
       socket.disconnect();
     };

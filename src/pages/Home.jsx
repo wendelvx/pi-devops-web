@@ -3,6 +3,9 @@ import { DashboardLayout } from '../components/DashboardLayout';
 import { Play, ShieldAlert, Cpu, Code2, Trash2, AlertTriangle, X } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
+// IMPORTAÇÃO NECESSÁRIA DO SOCKET
+import { socket } from '../services/socket';
+
 import fotoInfra from '../assets/infra_boss.jpg';
 import fotoLogic from '../assets/logic_boss.jpg';
 import fotoSecurity from '../assets/security_boss.jpg';
@@ -12,12 +15,15 @@ export function Home() {
   const [bossId, setBossId] = useState('infra_boss');
   const [activeRooms, setActiveRooms] = useState([]);
   
-  // NOVO: Estado para gerenciar o Modal de Exclusão
+  // Estado para gerenciar o Modal de Exclusão
   const [roomToDelete, setRoomToDelete] = useState(null);
   
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Garante que o painel principal esteja conectado para emitir comandos
+    socket.connect();
+    
     const savedRooms = JSON.parse(localStorage.getItem('@dungeon:rooms')) || [];
     setActiveRooms(savedRooms);
   }, []);
@@ -45,9 +51,13 @@ export function Home() {
     navigate(`/room/${roomId}`);
   };
 
-  // NOVO: Função que efetiva a exclusão após confirmar no modal
+  // Função que efetiva a exclusão após confirmar no modal
   const confirmDelete = () => {
     if (!roomToDelete) return;
+    
+    // 💥 Emite o evento de destruição total da sala para o Back-end
+    socket.emit('admin_delete_room', { room_id: roomToDelete });
+
     const updatedRooms = activeRooms.filter(r => r.id !== roomToDelete);
     setActiveRooms(updatedRooms);
     localStorage.setItem('@dungeon:rooms', JSON.stringify(updatedRooms));
@@ -73,7 +83,7 @@ export function Home() {
             
             <h3 className="text-xl font-bold text-white mb-2">Remover Instância?</h3>
             <p className="text-slate-300 mb-6 text-sm leading-relaxed">
-              Você tem certeza que deseja remover a sala <span className="font-bold text-caos">{roomToDelete}</span> do seu painel? Esta ação apenas remove a sala da sua lista de atalhos.
+              Você tem certeza que deseja remover a sala <span className="font-bold text-caos">{roomToDelete}</span> do seu painel? Esta ação destruirá a sessão e expulsará todos os alunos conectados.
             </p>
             
             <div className="flex gap-3 justify-end">

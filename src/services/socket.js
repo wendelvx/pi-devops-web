@@ -2,7 +2,7 @@
 import { io } from 'socket.io-client';
 
 // Usando o Tunnel, você pode abrir este painel de qualquer computador do mundo!
-const BACKEND_URL = 'https://valentine-facts-municipality-driver.trycloudflare.com'; 
+const BACKEND_URL = 'https://claims-angeles-terrace-specs.trycloudflare.com'; 
 
 export const socket = io(BACKEND_URL, {
   autoConnect: false,
