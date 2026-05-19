@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '../components/DashboardLayout';
-import { ShieldAlert, Activity, RotateCcw, LogOut, Crosshair, Users, Terminal, Flame, Settings2 } from 'lucide-react';
+// 1. IMPORTADO O ÍCONE 'Play' AQUI
+import { ShieldAlert, Activity, RotateCcw, LogOut, Crosshair, Users, Terminal, Flame, Settings2, AlertTriangle, X, Play } from 'lucide-react';
 import { socket } from '../services/socket';
 
 import fotoInfra from '../assets/infra_boss.jpg';
@@ -36,8 +37,8 @@ export function RoomDashboard() {
     max_hp: 20000,
     team_hp: 10000,
     max_team_hp: 10000,
-    status: 'fighting',
-    last_action: 'A masmorra foi aberta. Aguardando ataques...',
+    status: 'waiting', // Começa esperando
+    last_action: 'Carregando estado da masmorra...',
     active_incident: null,
     incident_timer: 0,
     class_counts: {}, 
@@ -50,11 +51,22 @@ export function RoomDashboard() {
   });
 
   const [logs, setLogs] = useState([]);
+  const [showResetModal, setShowResetModal] = useState(false);
   const lastActionRef = useRef('');
 
   useEffect(() => {
     socket.connect();
-    socket.emit('join_game', { nickname: 'GAME_MASTER', class: 'admin', room_id: roomId, boss_id: initialBossId });
+    
+    // Verifica se a sala acabou de ser criada pelo botão Inicializar Masmorra
+    const isNewRoom = sessionStorage.getItem(`@dungeon:room_created_${roomId}`);
+
+    if (isNewRoom === "true") {
+      socket.emit('join_game', { nickname: 'GAME_MASTER', class: 'admin', room_id: roomId, boss_id: initialBossId });
+      sessionStorage.removeItem(`@dungeon:room_created_${roomId}`);
+    } else {
+      socket.emit('join_admin_spectator', { room_id: roomId });
+      socket.emit('admin_request_state', { room_id: roomId }); 
+    }
 
     socket.on('boss_update', (data) => {
       setGameState(prevState => ({
@@ -75,12 +87,16 @@ export function RoomDashboard() {
     };
   }, [roomId, initialBossId]);
 
-  const handleReset = () => {
-    if(window.confirm("Atenção! Isso irá restaurar a vida do Boss e limpar os incidentes. Deseja continuar?")) {
-      socket.emit('admin_reset_room', { room_id: roomId });
-      lastActionRef.current = '🔄 O Administrador resetou a masmorra!';
-      setLogs([{ id: Date.now(), time: new Date().toLocaleTimeString(), msg: '🔄 O Administrador resetou a masmorra!' }]);
-    }
+  const confirmReset = () => {
+    socket.emit('admin_reset_room', { room_id: roomId });
+    lastActionRef.current = '🔄 O Administrador resetou a masmorra!';
+    setLogs([{ id: Date.now(), time: new Date().toLocaleTimeString(), msg: '🔄 O Administrador resetou a masmorra!' }]);
+    setShowResetModal(false);
+  };
+
+  // 2. NOVA FUNÇÃO PARA INICIAR A BATALHA
+  const handleStartBattle = () => {
+    socket.emit('admin_start_battle', { room_id: roomId });
   };
 
   const bossHpPercent = Math.max(0, (gameState.boss_hp / gameState.max_hp) * 100);
@@ -90,9 +106,15 @@ export function RoomDashboard() {
   const isCriticalHp = bossHpPercent < 20;
 
   let incidentTimerPercent = 0;
+  let resolutionProgressPercent = 0;
+
   if (hasIncident) {
     const maxTime = gameState.active_incident.duration || 15;
     incidentTimerPercent = Math.max(0, (gameState.incident_timer / maxTime) * 100);
+    
+    const reqRes = gameState.active_incident.required_resolutions || 1;
+    const curRes = gameState.active_incident.current_resolutions || 0;
+    resolutionProgressPercent = Math.min(100, Math.max(0, (curRes / reqRes) * 100));
   }
   
   const bossAvatarUrl = BOSS_AVATARS[gameState.current_boss?.id] || fotoInfra;
@@ -112,7 +134,38 @@ export function RoomDashboard() {
   return (
     <DashboardLayout>
       
-      {/* TELA DE OVERLAY: VITÓRIA OU DERROTA + MVP */}
+      {/* ---------------- MODAL ELEGANTE DE CONFIRMAÇÃO DE RESET ---------------- */}
+      {showResetModal && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-dark-950/80 backdrop-blur-sm p-4">
+          <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 max-w-md w-full shadow-2xl animate-[fadeIn_0.2s_ease-out]">
+            
+            <div className="flex justify-between items-start mb-4">
+              <div className="p-3 bg-warn/10 rounded-xl">
+                <AlertTriangle className="text-warn" size={28} />
+              </div>
+              <button onClick={() => setShowResetModal(false)} className="text-slate-400 hover:text-white">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <h3 className="text-xl font-bold text-white mb-2">Atenção, Administrador!</h3>
+            <p className="text-slate-300 mb-6 text-sm leading-relaxed">
+              Você está prestes a resetar a sala <span className="font-bold text-warn">{roomId}</span>. Isso irá restaurar a vida do Boss, curar a equipe e limpar todos os incidentes ativos. Deseja prosseguir?
+            </p>
+            
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowResetModal(false)} className="px-4 py-2 rounded-lg font-bold text-slate-300 hover:bg-dark-700 transition-colors">
+                CANCELAR
+              </button>
+              <button onClick={confirmReset} className="px-4 py-2 bg-warn text-dark-950 rounded-lg font-bold hover:bg-yellow-400 transition-colors shadow-[0_0_15px_rgba(250,204,21,0.3)]">
+                SIM, RESETAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ------------------------------------------------------------------------- */}
+
       {isGameOver && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-dark-950/90 backdrop-blur-md p-8">
           <div className={`flex flex-col items-center p-12 rounded-3xl border-4 max-w-3xl w-full text-center ${
@@ -135,7 +188,7 @@ export function RoomDashboard() {
               </div>
             )}
             
-            <button onClick={handleReset} className="mt-10 px-8 py-4 bg-dark-800 border-2 border-slate-600 rounded-xl text-white font-black text-lg hover:bg-slate-700 transition-all">
+            <button onClick={() => setShowResetModal(true)} className="mt-10 px-8 py-4 bg-dark-800 border-2 border-slate-600 rounded-xl text-white font-black text-lg hover:bg-slate-700 transition-all">
               INICIAR NOVA BATALHA
             </button>
           </div>
@@ -144,14 +197,25 @@ export function RoomDashboard() {
 
       {/* CABEÇALHO COMPACTO */}
       <div className="flex justify-between items-center mb-4 border-b border-dark-700 pb-3 relative z-10">
-        <div>
+        <div className="flex items-center gap-6">
           <h2 className="text-2xl font-black text-white tracking-widest uppercase flex items-center gap-3">
             <Activity className="text-brand-500 animate-pulse" size={24} /> 
             TRANSMISSÃO: <span className="text-brand-500">{roomId}</span>
           </h2>
+          
+          {/* 3. BOTÃO DE START APARECE APENAS ENQUANTO AGUARDA */}
+          {gameState.status === 'waiting' && (
+            <button 
+              onClick={handleStartBattle}
+              className="flex items-center gap-2 px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg font-black tracking-widest uppercase transition-all shadow-[0_0_20px_rgba(22,163,74,0.4)] animate-pulse"
+            >
+              <Play size={18} className="fill-current" /> LIBERAR ATAQUE
+            </button>
+          )}
         </div>
         <div className="flex gap-2">
-          <button onClick={handleReset} className="flex items-center gap-2 px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-warn hover:bg-warn/10 hover:border-warn/30 transition-all text-sm font-bold">
+          {/* BOTÃO QUE CHAMA O MODAL */}
+          <button onClick={() => setShowResetModal(true)} className="flex items-center gap-2 px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-warn hover:bg-warn/10 hover:border-warn/30 transition-all text-sm font-bold">
             <RotateCcw size={14} /> RESETAR
           </button>
           <button onClick={() => navigate('/')} className="flex items-center gap-2 px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-slate-300 hover:text-white transition-colors text-sm font-bold">
@@ -220,9 +284,11 @@ export function RoomDashboard() {
                     <span className="text-dark-400 mr-2">[{log.time}]</span>
                     <span className={`
                       ${log.msg.includes('CRÍTICO') || log.msg.includes('Resetou') || log.msg.includes('Tempo Esgotado') ? 'text-warn font-bold' : 'text-slate-300'} 
-                      ${log.msg.includes('salvou') || log.msg.includes('curou') || log.msg.includes('sucesso') ? 'text-heal font-bold' : ''}
+                      ${log.msg.includes('salvou') || log.msg.includes('NEUTRALIZOU') || log.msg.includes('sucesso') || log.msg.includes('COMEÇOU') ? 'text-heal font-bold' : ''}
                       ${log.msg.includes('COMPROMETIDO') ? 'text-caos font-bold' : ''}
                       ${log.msg.includes('atacou') ? 'text-brand-400' : ''}
+                      ${log.msg.includes('degradação') ? 'text-orange-500/80 italic' : ''}
+                      ${log.msg.includes('Contribuindo') ? 'text-blue-400' : ''}
                     `}>
                       {log.msg.replace('!', '')}
                     </span>
@@ -326,8 +392,25 @@ export function RoomDashboard() {
 
                     <div className="bg-dark-950/80 backdrop-blur p-4 rounded-xl border border-dark-700 shadow-lg">
                       <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          Resoluções ({gameState.active_incident.current_resolutions}/{gameState.active_incident.required_resolutions})
+                        </span>
+                        <span className={`text-xl font-black drop-shadow-md ${incidentTheme.text}`}>
+                          {Math.round(resolutionProgressPercent)}%
+                        </span>
+                      </div>
+                      <div className="h-3 w-full bg-dark-900 rounded-full overflow-hidden border border-dark-800 shadow-inner">
+                        <div 
+                          className={`h-full transition-all duration-300 ease-out ${incidentTheme.text.replace('text-', 'bg-')}`}
+                          style={{ width: `${resolutionProgressPercent}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-dark-950/80 backdrop-blur p-4 rounded-xl border border-dark-700 shadow-lg">
+                      <div className="flex justify-between items-center mb-2">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full animate-ping ${hasIncident ? (incidentTheme.text.replace('text', 'bg')) : ''}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full animate-ping ${hasIncident ? (incidentTheme.text.replace('text-', 'bg-')) : ''}`} />
                           Tempo Restante
                         </span>
                         <span className={`text-2xl font-black drop-shadow-md ${incidentTheme.text}`}>{gameState.incident_timer}s</span>
@@ -335,7 +418,7 @@ export function RoomDashboard() {
                       
                       <div className="h-3 w-full bg-dark-900 rounded-full overflow-hidden border border-dark-800 shadow-inner">
                         <div 
-                          className={`h-full transition-all duration-1000 ease-linear relative ${hasIncident ? (incidentTheme.text.replace('text', 'bg')) : ''}`}
+                          className={`h-full transition-all duration-1000 ease-linear relative ${hasIncident ? (incidentTheme.text.replace('text-', 'bg-')) : ''}`}
                           style={{ width: `${incidentTimerPercent}%` }}
                         />
                       </div>
@@ -346,9 +429,19 @@ export function RoomDashboard() {
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-6 opacity-60">
-                <ShieldAlert className="text-slate-600 mb-3 animate-pulse-slow" size={40} />
-                <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-sm mb-1">Monitor de Infraestrutura Ativo</p>
-                <p className="text-slate-500 font-mono text-xs">Status: 200 OK. Sistema operando nominalmente.</p>
+                {gameState.status === 'waiting' ? (
+                  <>
+                    <Activity className="text-slate-600 mb-3 animate-pulse" size={40} />
+                    <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-sm mb-1">AGUARDANDO LIBERAÇÃO</p>
+                    <p className="text-slate-500 font-mono text-xs">Os alunos podem logar, mas os ataques estão bloqueados.</p>
+                  </>
+                ) : (
+                  <>
+                    <ShieldAlert className="text-slate-600 mb-3 animate-pulse-slow" size={40} />
+                    <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-sm mb-1">Monitor de Infraestrutura Ativo</p>
+                    <p className="text-slate-500 font-mono text-xs">Status: 200 OK. Sistema operando nominalmente.</p>
+                  </>
+                )}
               </div>
             )}
           </div>
