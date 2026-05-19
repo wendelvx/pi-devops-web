@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '../components/DashboardLayout';
-// 1. IMPORTADO O ÍCONE 'Play' AQUI
 import { ShieldAlert, Activity, RotateCcw, LogOut, Crosshair, Users, Terminal, Flame, Settings2, AlertTriangle, X, Play } from 'lucide-react';
 import { socket } from '../services/socket';
 
@@ -28,7 +27,7 @@ export function RoomDashboard() {
   const navigate = useNavigate();
   
   const savedRooms = JSON.parse(localStorage.getItem('@dungeon:rooms')) || [];
-  const currentRoom = savedRooms.find(r => r.id === roomId);
+  const currentRoom = savedRooms.find((r) => r.id === roomId);
   const initialBossId = currentRoom ? currentRoom.bossId : 'infra_boss';
   const initialBossName = currentRoom ? currentRoom.bossName : 'Professor de DevOps';
 
@@ -37,12 +36,12 @@ export function RoomDashboard() {
     max_hp: 20000,
     team_hp: 10000,
     max_team_hp: 10000,
-    status: 'waiting', // Começa esperando
+    status: 'waiting', 
     last_action: 'Carregando estado da masmorra...',
     active_incident: null,
     incident_timer: 0,
     class_counts: {}, 
-    mvp: null,
+    top_rank: [], 
     current_boss: {
       id: initialBossId,
       name: initialBossName,
@@ -54,35 +53,32 @@ export function RoomDashboard() {
   const [showResetModal, setShowResetModal] = useState(false);
   const lastActionRef = useRef('');
 
+  // Animação Visual de Dano
+  const [isHit, setIsHit] = useState(false);
+  const prevBossHp = useRef(null);
+  const lastHitAnimTime = useRef(0);
+
   useEffect(() => {
     socket.connect();
 
     const onAdminConnect = () => {
-      // 1. Lemos a flag que a Home.tsx salva. 
-      // Se for "true", significa que o admin acabou de criar a sala neste exato momento.
-      const isNewRoom = sessionStorage.getItem(`@dungeon:room_created_${roomId}`);
+      // MUDANÇA PRINCIPAL AQUI:
+      // O Admin sempre vai tentar dar o join reforçando qual é o Boss.
+      // A Go Engine cria a sala com esse Boss (se já não existir).
+      socket.emit('join_game', { 
+        nickname: 'GAME_MASTER', 
+        class: 'admin', 
+        room_id: roomId, 
+        boss_id: initialBossId 
+      });
 
-      if (isNewRoom === "true") {
-        // Envia APENAS o JOIN_GAME. O backend Node.js já está programado para disparar
-        // uma atualização de estado automaticamente no final do join_game.
-        socket.emit('join_game', { 
-          nickname: 'GAME_MASTER', 
-          class: 'admin', 
-          room_id: roomId, 
-          boss_id: initialBossId 
-        });
-        
-        // Removemos a flag para que um simples F5 (refresh) não tente recriar a sala.
-        sessionStorage.removeItem(`@dungeon:room_created_${roomId}`);
-      } else {
-        // 2. Se for falso, é apenas o admin reconectando ou dando refresh na página.
-        // A sala já existe no Go, então entramos como espectador e pedimos o estado.
-        socket.emit('join_admin_spectator', { room_id: roomId });
-        socket.emit('admin_request_state', { room_id: roomId }); 
-      }
+      // Em seguida, pedimos a sincronização de tela com um pequeno atraso
+      // para dar tempo do Redis processar a criação da sala.
+      setTimeout(() => {
+        socket.emit('admin_request_state', { room_id: roomId });
+      }, 250);
     };
 
-    // Validação contra os re-renders do Strict Mode do React 18
     if (socket.connected) {
       onAdminConnect();
     } else {
@@ -96,6 +92,17 @@ export function RoomDashboard() {
         max_hp: data.current_boss?.max_hp || prevState.max_hp
       }));
 
+      // Throttle de 400ms na animação de Dano Web
+      if (prevBossHp.current !== null && data.boss_hp < prevBossHp.current) {
+        const now = Date.now();
+        if (now - lastHitAnimTime.current > 400) {
+          lastHitAnimTime.current = now;
+          setIsHit(true);
+          setTimeout(() => setIsHit(false), 150);
+        }
+      }
+      prevBossHp.current = data.boss_hp;
+
       if (data.last_action && data.last_action !== lastActionRef.current) {
         lastActionRef.current = data.last_action;
         setLogs(prev => [{ id: Date.now(), time: new Date().toLocaleTimeString(), msg: data.last_action }, ...prev].slice(0, 30));
@@ -105,7 +112,7 @@ export function RoomDashboard() {
     return () => {
       socket.off('connect', onAdminConnect);
       socket.off('boss_update');
-      socket.disconnect();
+      // AQUI estava o socket.disconnect() que cortava o comando antes dele chegar na Go Engine! Removido.
     };
   }, [roomId, initialBossId]);
 
@@ -113,10 +120,10 @@ export function RoomDashboard() {
     socket.emit('admin_reset_room', { room_id: roomId });
     lastActionRef.current = '🔄 O Administrador resetou a masmorra!';
     setLogs([{ id: Date.now(), time: new Date().toLocaleTimeString(), msg: '🔄 O Administrador resetou a masmorra!' }]);
+    prevBossHp.current = null; 
     setShowResetModal(false);
   };
 
-  // 2. NOVA FUNÇÃO PARA INICIAR A BATALHA
   const handleStartBattle = () => {
     socket.emit('admin_start_battle', { room_id: roomId });
   };
@@ -130,7 +137,7 @@ export function RoomDashboard() {
   let incidentTimerPercent = 0;
   let resolutionProgressPercent = 0;
 
-  if (hasIncident) {
+  if (hasIncident && gameState.active_incident) {
     const maxTime = gameState.active_incident.duration || 15;
     incidentTimerPercent = Math.max(0, (gameState.incident_timer / maxTime) * 100);
     
@@ -156,7 +163,7 @@ export function RoomDashboard() {
   return (
     <DashboardLayout>
       
-      {/* ---------------- MODAL ELEGANTE DE CONFIRMAÇÃO DE RESET ---------------- */}
+      {/* ---------------- MODAL DE CONFIRMAÇÃO DE RESET ---------------- */}
       {showResetModal && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center bg-dark-950/80 backdrop-blur-sm p-4">
           <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 max-w-md w-full shadow-2xl animate-[fadeIn_0.2s_ease-out]">
@@ -189,7 +196,7 @@ export function RoomDashboard() {
       {/* ------------------------------------------------------------------------- */}
 
       {isGameOver && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-dark-950/90 backdrop-blur-md p-8">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-dark-950/90 backdrop-blur-md p-8 overflow-y-auto">
           <div className={`flex flex-col items-center p-12 rounded-3xl border-4 max-w-3xl w-full text-center ${
             gameState.status === 'victory' 
               ? 'border-green-500 bg-green-900/20 shadow-[0_0_100px_rgba(34,197,94,0.3)]' 
@@ -200,13 +207,39 @@ export function RoomDashboard() {
               {gameState.status === 'victory' ? 'VITÓRIA DA TURMA' : 'SISTEMA DESTRUÍDO'}
             </h1>
             
-            {gameState.mvp && (
+            {/* PAINEL DO TOP 3 */}
+            {gameState.top_rank && gameState.top_rank.length > 0 && (
               <div className="mt-8 bg-dark-900 border border-brand-500 p-6 rounded-2xl w-full text-center relative overflow-hidden">
-                <div className="absolute inset-0 bg-brand-500/10 animate-pulse pointer-events-none" />
-                <h3 className="text-brand-500 font-bold uppercase tracking-widest mb-1">⭐ Jogador Destaque (MVP)</h3>
-                <p className="text-4xl font-black text-white uppercase">{gameState.mvp.nickname}</p>
-                <p className="text-slate-400 mt-1 text-lg">Esquadrão: <span className="font-bold text-white">{gameState.mvp.class}</span></p>
-                <p className="text-2xl font-black text-heal mt-4">+{gameState.mvp.damage} DMG CAUSADO</p>
+                <div className="absolute inset-0 bg-brand-500/5 animate-pulse pointer-events-none" />
+                <h3 className="text-brand-500 font-bold uppercase tracking-widest mb-4">🏆 TOP 3 DESTAQUES TÉCNICOS</h3>
+                
+                <div className="flex flex-col gap-3 relative z-10">
+                  {gameState.top_rank.map((player, index) => (
+                    <div 
+                      key={player.nickname} 
+                      className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
+                        index === 0 
+                          ? 'bg-brand-500/20 border-brand-500 shadow-[0_0_20px_rgba(99,102,241,0.2)] scale-[1.02]' 
+                          : 'bg-dark-800 border-dark-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className={`text-3xl font-black ${index === 0 ? 'text-brand-400' : 'text-slate-500'}`}>
+                          #{index + 1}
+                        </span>
+                        <div className="text-left">
+                          <p className={`text-xl font-black uppercase ${index === 0 ? 'text-white' : 'text-slate-300'}`}>
+                            {player.nickname}
+                          </p>
+                          <p className="text-slate-400 text-sm font-bold">{player.class.toUpperCase()}</p>
+                        </div>
+                      </div>
+                      <p className={`text-2xl font-black ${index === 0 ? 'text-brand-400' : 'text-heal'}`}>
+                        +{player.damage} DMG
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             
@@ -225,7 +258,6 @@ export function RoomDashboard() {
             TRANSMISSÃO: <span className="text-brand-500">{roomId}</span>
           </h2>
           
-          {/* 3. BOTÃO DE START APARECE APENAS ENQUANTO AGUARDA */}
           {gameState.status === 'waiting' && (
             <button 
               onClick={handleStartBattle}
@@ -236,7 +268,6 @@ export function RoomDashboard() {
           )}
         </div>
         <div className="flex gap-2">
-          {/* BOTÃO QUE CHAMA O MODAL */}
           <button onClick={() => setShowResetModal(true)} className="flex items-center gap-2 px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-warn hover:bg-warn/10 hover:border-warn/30 transition-all text-sm font-bold">
             <RotateCcw size={14} /> RESETAR
           </button>
@@ -246,7 +277,7 @@ export function RoomDashboard() {
         </div>
       </div>
 
-      {/* GRID PRINCIPAL: 100% da altura da tela menos o cabeçalho */}
+      {/* GRID PRINCIPAL */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 h-[calc(100vh-120px)] relative z-10">
         
         {/* COLUNA ESQUERDA: Equipes e Logs */}
@@ -288,7 +319,7 @@ export function RoomDashboard() {
             </div>
           </div>
 
-          {/* Console de Combate - Ocupará o resto da altura automaticamente */}
+          {/* Console de Combate */}
           <div className="glass-card rounded-2xl flex flex-col flex-1 border border-dark-700 min-h-0 overflow-hidden">
             <div className="p-2.5 border-b border-dark-700 bg-dark-900 flex justify-between items-center shrink-0">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
@@ -344,12 +375,14 @@ export function RoomDashboard() {
             </div>
 
             <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
-              {/* FOTO DO BOSS REDUZIDA */}
+              
+              {/* FOTO DO BOSS COM ANIMAÇÃO DE DANO (isHit) */}
               <div className="relative shrink-0">
                 <img 
                   src={bossAvatarUrl} 
                   alt="Boss Avatar" 
-                  className={`w-32 h-32 lg:w-48 lg:h-48 rounded-full object-cover border-[6px] ${isCriticalHp ? 'border-caos animate-pulse' : 'border-dark-600'} bg-dark-900 shadow-xl`} 
+                  className={`w-32 h-32 lg:w-48 lg:h-48 rounded-full object-cover border-[6px] transition-transform duration-100 ${isCriticalHp ? 'border-caos animate-pulse' : 'border-dark-600'} bg-dark-900 shadow-xl`} 
+                  style={{ transform: isHit ? 'scale(0.85)' : 'scale(1)' }}
                 />
                 <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase border-2 shadow-xl whitespace-nowrap ${isCriticalHp ? 'bg-caos text-white border-white' : 'bg-dark-900 text-brand-500 border-brand-500'}`}>
                   {isCriticalHp ? 'CRÍTICO' : 'ESTÁVEL'}
@@ -363,7 +396,7 @@ export function RoomDashboard() {
                 <div className="flex justify-between items-end mb-2 mt-4">
                   <span className="text-lg font-black text-caos uppercase tracking-widest">HP DO CHEFE</span>
                   <div className="text-right">
-                    <span className={`text-4xl lg:text-5xl font-black drop-shadow-md ${isCriticalHp ? 'text-caos' : 'text-white'}`}>
+                    <span className={`text-4xl lg:text-5xl font-black drop-shadow-md transition-colors ${isHit ? 'text-red-400' : isCriticalHp ? 'text-caos' : 'text-white'}`}>
                       {gameState.boss_hp}
                     </span>
                     <span className="text-xl text-slate-500 font-bold ml-1">/ {gameState.current_boss.max_hp}</span>
@@ -372,7 +405,7 @@ export function RoomDashboard() {
 
                 <div className="h-8 w-full bg-dark-950 rounded-xl overflow-hidden border-2 border-dark-900 shadow-inner p-1">
                   <div 
-                    className={`h-full rounded-lg transition-all duration-500 ease-out relative overflow-hidden ${isCriticalHp ? 'bg-caos' : 'bg-brand-500'}`}
+                    className={`h-full rounded-lg transition-all duration-300 ease-out relative overflow-hidden ${isCriticalHp ? 'bg-caos' : 'bg-brand-500'}`}
                     style={{ width: `${bossHpPercent}%` }}
                   >
                     <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite]" />
@@ -382,9 +415,9 @@ export function RoomDashboard() {
             </div>
           </div>
 
-          {/* INCIDENTE TEMÁTICO - Expande para preencher o resto */}
+          {/* INCIDENTE TEMÁTICO */}
           <div className={`rounded-3xl transition-all duration-500 border-2 overflow-hidden flex-1 flex flex-col justify-center ${
-              hasIncident ? incidentTheme.color : 'border-dashed border-dark-700 bg-dark-900/30'
+              hasIncident && incidentTheme?.color ? incidentTheme.color : 'border-dashed border-dark-700 bg-dark-900/30'
             }`}
           >
             {hasIncident ? (
@@ -393,8 +426,8 @@ export function RoomDashboard() {
                   
                   <div className="flex flex-col items-center md:items-start flex-1 text-center md:text-left">
                     <div className="flex items-center gap-3 mb-2">
-                      {incidentTheme.icon}
-                      <h4 className={`${incidentTheme.text} font-black text-2xl tracking-widest uppercase drop-shadow-md`}>
+                      {incidentTheme?.icon}
+                      <h4 className={`${incidentTheme?.text} font-black text-2xl tracking-widest uppercase drop-shadow-md`}>
                         {gameState.active_incident.title}
                       </h4>
                     </div>
@@ -407,9 +440,9 @@ export function RoomDashboard() {
                     <div className="bg-dark-950/80 backdrop-blur border border-dark-700 p-4 rounded-xl flex justify-between items-center shadow-lg">
                       <div className="flex flex-col">
                         <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">Equipe Acionada</span>
-                        <span className={`${incidentTheme.text} font-black text-xl uppercase`}>{gameState.active_incident.target_class}</span>
+                        <span className={`${incidentTheme?.text} font-black text-xl uppercase`}>{gameState.active_incident.target_class}</span>
                       </div>
-                      <Crosshair className={incidentTheme.text} size={24} opacity={0.5} />
+                      <Crosshair className={incidentTheme?.text} size={24} opacity={0.5} />
                     </div>
 
                     <div className="bg-dark-950/80 backdrop-blur p-4 rounded-xl border border-dark-700 shadow-lg">
@@ -417,13 +450,13 @@ export function RoomDashboard() {
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                           Resoluções ({gameState.active_incident.current_resolutions}/{gameState.active_incident.required_resolutions})
                         </span>
-                        <span className={`text-xl font-black drop-shadow-md ${incidentTheme.text}`}>
+                        <span className={`text-xl font-black drop-shadow-md ${incidentTheme?.text}`}>
                           {Math.round(resolutionProgressPercent)}%
                         </span>
                       </div>
                       <div className="h-3 w-full bg-dark-900 rounded-full overflow-hidden border border-dark-800 shadow-inner">
                         <div 
-                          className={`h-full transition-all duration-300 ease-out ${incidentTheme.text.replace('text-', 'bg-')}`}
+                          className={`h-full transition-all duration-300 ease-out ${incidentTheme?.text?.replace('text-', 'bg-') || ''}`}
                           style={{ width: `${resolutionProgressPercent}%` }}
                         />
                       </div>
@@ -432,15 +465,15 @@ export function RoomDashboard() {
                     <div className="bg-dark-950/80 backdrop-blur p-4 rounded-xl border border-dark-700 shadow-lg">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full animate-ping ${hasIncident ? (incidentTheme.text.replace('text-', 'bg-')) : ''}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full animate-ping ${hasIncident ? (incidentTheme?.text?.replace('text-', 'bg-') || '') : ''}`} />
                           Tempo Restante
                         </span>
-                        <span className={`text-2xl font-black drop-shadow-md ${incidentTheme.text}`}>{gameState.incident_timer}s</span>
+                        <span className={`text-2xl font-black drop-shadow-md ${incidentTheme?.text}`}>{gameState.incident_timer}s</span>
                       </div>
                       
                       <div className="h-3 w-full bg-dark-900 rounded-full overflow-hidden border border-dark-800 shadow-inner">
                         <div 
-                          className={`h-full transition-all duration-1000 ease-linear relative ${hasIncident ? (incidentTheme.text.replace('text-', 'bg-')) : ''}`}
+                          className={`h-full transition-all duration-1000 ease-linear relative ${hasIncident ? (incidentTheme?.text?.replace('text-', 'bg-') || '') : ''}`}
                           style={{ width: `${incidentTimerPercent}%` }}
                         />
                       </div>
